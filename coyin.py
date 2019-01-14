@@ -102,26 +102,31 @@ async def perfTask(loop, cmd, pid, hostname, restart=True):
     async with InfluxDBClient(db='testdb', output='iterable') as client:
         done = False
         while not done:
-            line = await proc.stdout.readline()
+            try:
+                line = await proc.stdout.readline()
 
-            if not line:
+                if not line:
+                    done = True
+                    continue
+                
+                l = line.strip().decode('ascii').split('#')
+                l = list(filter(None, l))
+                logging.debug(l)
+                current_time = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+                value = int (l[1])
+                if value:
+                    point = {
+                        'time': current_time,
+                        'measurement': 'perf_events',
+                        'tags': { 'type': l[2], 'host': hostname, 'pid': pid },
+                        'fields': {'value': int(l[1])}
+                    }
+                    logging.debug(point)
+                
+                    await client.write(point)
+            except Exception as e:
+                logging.error(e)
                 done = True
-                continue
-            
-            l = line.strip().decode('ascii').split('#')
-            l = list(filter(None, l))
-            logging.debug(l)
-            current_time = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-            
-            point = {
-                'time': current_time,
-                'measurement': 'perf_events',
-                'tags': { 'type': l[2], 'host': hostname, 'pid': pid },
-                'fields': {'value': int(l[1])}
-            }
-            logging.debug(point)
-            
-            await client.write(point)
 
 
         logging.info("%s: Return Code %s", cmd, proc.returncode)
@@ -151,7 +156,8 @@ if __name__ == '__main__':
     try:
         hostname = socket.gethostname()
         loop.create_task(vmstat(loop, 'vmstat -nt 1', hostname))
-        loop.create_task(perfTask(loop, "sudo perf stat -p %s -e dTLB-loads,dTLB-load-misses,iTLB-loads,iTLB-load-misses -I 1000 -x# 2>&1" % (args.pid), args.pid, hostname, False))
+        loop.create_task(perfTask(loop, "sudo perf stat -p %s -e 'syscalls:sys_enter_*,dTLB-loads,dTLB-load-misses,iTLB-loads,iTLB-load-misses' -I 1000 -x# 2>&1" % (args.pid), args.pid, hostname, False))
+#        loop.create_task(perfTask(loop, "sudo perf stat -p %s -e 'dTLB-loads,dTLB-load-misses,iTLB-loads,iTLB-load-misses' -I 1000 -x# 2>&1" % (args.pid), args.pid, hostname, False))
         #loop.run_until_complete(fetch())
         loop.run_forever()
     finally:
