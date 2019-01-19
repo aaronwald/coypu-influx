@@ -86,7 +86,7 @@ class Display:
         self.stdscr.refresh()
         
     async def get_ch(self):
-        while True:
+        while loop.is_running():
             try:
                 char = await self.loop.run_in_executor(None, self.stdscr.getch)
             
@@ -149,9 +149,10 @@ if __name__ == '__main__':
             task1 = loop.create_task(fetchMeasurements(loop, display))
             task2 = loop.create_task(display.get_ch())
             loop.run_forever()
-            task1.cancel()
-            task2.cancel()
     finally:
+        for task in asyncio.Task.all_tasks():
+            task.cancel()
+            
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
             
